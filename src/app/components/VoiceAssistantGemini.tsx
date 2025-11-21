@@ -107,31 +107,91 @@ export default function VoiceAssistantGemini() {
     setError(null);
     
     try {
-      // Call Gemini API
-      const res = await fetch("/api/gemini", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ question: text }),
-      });
+      // Check if the question is asking about marks
+      const marksQueryRegex = /(?:(?:നിന്റെ|നിങ്ങളുടെ|രേഖപ്പെടുത്തൽ)\s+)?(?:മാർക്ക്|മാർക്കുകൾ)(?:\s+(.+))?/;
+      const match = text.match(marksQueryRegex);
+      
+      if (match) {
+        // It's a marks query
+        const name = match[1];
+        if (name) {
+          // Query specific person's mark
+          const res = await fetch("/api/marks", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ query: name.trim() }),
+          });
+          
+          const data = await res.json();
+          
+          if (data.found) {
+            const responseText = `${data.name} ന്റെ മാർക്ക് ${data.score} ആണ്.`;
+            setAnswer(responseText);
+            
+            // Speak output
+            const speak = new SpeechSynthesisUtterance(responseText);
+            speak.lang = "ml-IN";
+            speak.onend = () => setProcessing(false);
+            speak.onerror = (event) => {
+              console.error("Speech synthesis error", event);
+              setProcessing(false);
+            };
+            window.speechSynthesis.speak(speak);
+          } else {
+            setAnswer(data.message);
+            setProcessing(false);
+          }
+        } else {
+          // General marks query - get all marks
+          const res = await fetch("/api/marks");
+          const data = await res.json();
+          
+          let responseText = "മാർക്ക് ലിസ്റ്റ്:\n";
+          data.marks.forEach((entry: any) => {
+            responseText += `${entry.name}: ${entry.score}\n`;
+          });
+          
+          setAnswer(responseText);
+          
+          // Speak output
+          const speak = new SpeechSynthesisUtterance(responseText);
+          speak.lang = "ml-IN";
+          speak.onend = () => setProcessing(false);
+          speak.onerror = (event) => {
+            console.error("Speech synthesis error", event);
+            setProcessing(false);
+          };
+          window.speechSynthesis.speak(speak);
+        }
+      } else {
+        // Regular Gemini query
+        const res = await fetch("/api/gemini", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ question: text }),
+        });
 
-      if (!res.ok) {
-        throw new Error(`API request failed with status ${res.status}`);
+        if (!res.ok) {
+          throw new Error(`API request failed with status ${res.status}`);
+        }
+
+        const data = await res.json();
+        setAnswer(data.reply);
+
+        // Speak output
+        const speak = new SpeechSynthesisUtterance(data.reply);
+        speak.lang = "ml-IN";
+        speak.onend = () => setProcessing(false);
+        speak.onerror = (event) => {
+          console.error("Speech synthesis error", event);
+          setProcessing(false);
+        };
+        window.speechSynthesis.speak(speak);
       }
-
-      const data = await res.json();
-      setAnswer(data.reply);
-
-      // Speak output
-      const speak = new SpeechSynthesisUtterance(data.reply);
-      speak.lang = "ml-IN";
-      speak.onend = () => setProcessing(false);
-      speak.onerror = (event) => {
-        console.error("Speech synthesis error", event);
-        setProcessing(false);
-      };
-      window.speechSynthesis.speak(speak);
     } catch (error: any) {
       console.error("Error processing question:", error);
       setError("ക്ഷമിക്കണം, എന്തോ പ്രശ്നം ഉണ്ടായി. വീണ്ടും ശ്രമിക്കുക.");
